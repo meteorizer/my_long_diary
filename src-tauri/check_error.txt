@@ -1,0 +1,60 @@
+    Checking my_long_diary v0.1.0 (D:\works2026\my_diary2\src-tauri)
+warning: unused import: `Argon2`
+ --> src\crypto.rs:7:5
+  |
+7 |     Argon2,
+  |     ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0382]: borrow of moved value: `app`
+  --> src\commands.rs:74:56
+   |
+61 | pub fn read_diary(app: AppHandle, date: String, password: Option<String>) -> Result<String, String> {
+   |                   --- move occurs because `app` has type `AppHandle`, which does not implement the `Copy` trait
+62 |     let app_settings = settings::load_settings(&app);
+63 |     let dir_str = get_diary_dir(app)?;
+   |                                 --- value moved here
+...
+74 |             if let Some(salt) = settings::get_app_salt(&app) {
+   |                                                        ^^^^ value borrowed here after move
+   |
+note: consider changing this parameter type in function `get_diary_dir` to borrow instead if owning the value isn't necessary
+  --> src\commands.rs:18:27
+   |
+18 | pub fn get_diary_dir(app: AppHandle) -> Result<String, String> {
+   |        -------------      ^^^^^^^^^ this parameter takes ownership of the value
+   |        |
+   |        in this function
+help: consider cloning the value if the performance cost is acceptable
+   |
+63 |     let dir_str = get_diary_dir(app.clone())?;
+   |                                    ++++++++
+
+error[E0382]: borrow of moved value: `app`
+  --> src\commands.rs:98:56
+   |
+88 | pub fn save_diary(app: AppHandle, date: String, content: String, password: Option<String>) -> Result<(), String> {
+   |                   --- move occurs because `app` has type `AppHandle`, which does not implement the `Copy` trait
+89 |     let app_settings = settings::load_settings(&app);
+90 |     let dir_str = get_diary_dir(app)?;
+   |                                 --- value moved here
+...
+98 |             if let Some(salt) = settings::get_app_salt(&app) {
+   |                                                        ^^^^ value borrowed here after move
+   |
+note: consider changing this parameter type in function `get_diary_dir` to borrow instead if owning the value isn't necessary
+  --> src\commands.rs:18:27
+   |
+18 | pub fn get_diary_dir(app: AppHandle) -> Result<String, String> {
+   |        -------------      ^^^^^^^^^ this parameter takes ownership of the value
+   |        |
+   |        in this function
+help: consider cloning the value if the performance cost is acceptable
+   |
+90 |     let dir_str = get_diary_dir(app.clone())?;
+   |                                    ++++++++
+
+For more information about this error, try `rustc --explain E0382`.
+warning: `my_long_diary` (lib) generated 1 warning
+error: could not compile `my_long_diary` (lib) due to 2 previous errors; 1 warning emitted
