@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { useSettingsStore } from "./settingsStore";
 interface DiaryState {
   diaries: String[];        // Array of YYYY-MM-DD strings
   currentDate: string;      // The currently selected date (YYYY-MM-DD or similar format)
@@ -40,8 +39,7 @@ export const useDiaryStore = create<DiaryState>((set) => ({
 
   selectDiary: async (date: string) => {
     try {
-      const password = useSettingsStore.getState().sessionKey;
-      const content: string = await invoke("read_diary", { date, password });
+      const content: string = await invoke("read_diary", { date });
       set({ currentDate: date, currentContent: content });
     } catch (error) {
       console.error(`Failed to read diary for ${date}:`, error);
@@ -57,8 +55,7 @@ export const useDiaryStore = create<DiaryState>((set) => ({
   saveDiary: async (date: string, content: string) => {
     set({ isSaving: true });
     try {
-      const password = useSettingsStore.getState().sessionKey;
-      await invoke("save_diary", { date, content, password });
+      await invoke("save_diary", { date, content });
       
       // Update the local list to include this date if it's new
       set((state) => {

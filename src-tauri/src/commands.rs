@@ -3,8 +3,11 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::AppHandle;
 
-use crate::crypto;
 use crate::settings;
+
+/// Marker file left by the old encrypted version of the app.
+/// Removed by `scripts/decrypt_diary.py` once every diary is decrypted.
+const LEGACY_SALT_FILE: &str = ".app_salt";
 
 // Helper struct for Diary Entries
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,28 +35,14 @@ pub fn get_diary_dir(app: AppHandle) -> Result<String, String> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckDirectoryResult {
-    pub has_salt: bool,
-    pub salt: Option<String>,
+    /// True if the folder still holds diaries from the old encrypted version (.app_salt exists).
+    pub is_encrypted: bool,
 }
 
 #[tauri::command]
 pub fn check_directory(directory: String) -> Result<CheckDirectoryResult, String> {
-    let path = PathBuf::from(&directory);
-    if !path.exists() {
-        return Ok(CheckDirectoryResult { has_salt: false, salt: None });
-    }
-    
-    let salt_path = path.join(".app_salt");
-    if salt_path.exists() {
-        if let Ok(salt) = fs::read_to_string(&salt_path) {
-            let trimmed = salt.trim().to_string();
-            if !trimmed.is_empty() {
-                return Ok(CheckDirectoryResult { has_salt: true, salt: Some(trimmed) });
-            }
-        }
-    }
-    
-    Ok(CheckDirectoryResult { has_salt: false, salt: None })
+    let is_encrypted = PathBuf::from(&directory).join(LEGACY_SALT_FILE).exists();
+    Ok(CheckDirectoryResult { is_encrypted })
 }
 
 // 2. List all available diaries (files ending in .diary)
@@ -87,56 +76,39 @@ pub fn list_diaries(app: AppHandle) -> Result<Vec<String>, String> {
 
 // 3. Read a specific diary entry by date (filename)
 #[tauri::command]
-pub fn read_diary(app: AppHandle, date: String, password: Option<String>) -> Result<String, String> {
-    let app_settings = settings::load_settings(&app);
-    let dir_str = get_diary_dir(app.clone())?;
+pub fn read_diary(app: AppHandle, date: String) -> Result<String, String> {
+    let dir_str = get_diary_dir(app)?;
     let file_path = PathBuf::from(dir_str).join(format!("{}.diary", date));
-    
+
     if !file_path.exists() {
         return Ok(String::new()); // Return empty if not found
     }
 
     let file_content = fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
-    
-    if app_settings.has_password {
-        if let Some(pwd) = password {
-            if let Some(salt) = settings::get_app_salt(&app) {
-                let key = crypto::derive_key(&pwd, &salt)?;
-                return crypto::decrypt(&file_content, &key);
-            }
-        }
-        return Err("Password required to read this diary".into());
-    }
-    
-    // If no password, treat it as plain text (but it's read as bytes)
-    String::from_utf8(file_content).map_err(|e| format!("Invalid UTF-8 in file: {}", e))
+    String::from_utf8(file_content).map_err(|_| {
+        "암호화된 일기입니다. scripts/decrypt_diary.py 로 암호를 해제한 뒤 다시 열어 주세요.".to_string()
+    })
 }
 
 // 4. Save a diary entry (Atomic save)
 #[tauri::command]
-pub fn save_diary(app: AppHandle, date: String, content: String, password: Option<String>) -> Result<(), String> {
-    let app_settings = settings::load_settings(&app);
-    let dir_str = get_diary_dir(app.clone())?;
+pub fn save_diary(app: AppHandle, date: String, content: String) -> Result<(), String> {
+    let dir_str = get_diary_dir(app)?;
     let dir_path = PathBuf::from(dir_str);
     
     let file_path = dir_path.join(format!("{}.diary", date));
     let temp_file_path = dir_path.join(format!("{}.diary.tmp", date));
     
-    let data_to_write = if app_settings.has_password {
-        if let Some(pwd) = password {
-            if let Some(salt) = settings::get_app_salt(&app) {
-                let key = crypto::derive_key(&pwd, &salt)?;
-                crypto::encrypt(&content, &key)?
-            } else {
-                return Err("Password salt is missing in settings".into());
-            }
-        } else {
-            return Err("Password required to save this diary".into());
+    // Never overwrite a diary still encrypted by the old app version:
+    // it would be read back as empty and the original would be lost.
+    if let Ok(existing) = fs::read(&file_path) {
+        if std::str::from_utf8(&existing).is_err() {
+            return Err("암호화된 일기는 덮어쓸 수 없습니다. scripts/decrypt_diary.py 로 먼저 암호를 해제해 주세요.".into());
         }
-    } else {
-        content.into_bytes()
-    };
-    
+    }
+
+    let data_to_write = content.into_bytes();
+
     // Write to a temporary file first
     fs::write(&temp_file_path, data_to_write).map_err(|e| format!("Failed to write temporary file: {}", e))?;
     
@@ -150,25 +122,9 @@ pub fn save_diary(app: AppHandle, date: String, content: String, password: Optio
     Ok(())
 }
 
-// 5. Verify Password
+// 5. Import old diaries
 #[tauri::command]
-pub fn verify_password(app: AppHandle, password: String) -> Result<bool, String> {
-    let app_settings = settings::load_settings(&app);
-    if !app_settings.has_password {
-        return Ok(true);
-    }
-    
-    if let Some(salt) = settings::get_app_salt(&app) {
-        let _key = crypto::derive_key(&password, &salt)?;
-        Ok(true) // Assumes key derivation succeeds
-    } else {
-        Ok(false)
-    }
-}
-
-// 6. Import old diaries
-#[tauri::command]
-pub fn import_diaries(app: AppHandle, source_dir: String, password: Option<String>) -> Result<usize, String> {
+pub fn import_diaries(app: AppHandle, source_dir: String) -> Result<usize, String> {
     let source_path = PathBuf::from(&source_dir);
     if !source_path.exists() || !source_path.is_dir() {
         return Err("Source directory does not exist or is not a directory".into());
@@ -210,7 +166,7 @@ pub fn import_diaries(app: AppHandle, source_dir: String, password: Option<Strin
                     // Read old content
                     if let Ok(content) = fs::read_to_string(&path) {
                         // Save using our existing atomic save logic
-                        if save_diary(app.clone(), date_str, content, password.clone()).is_ok() {
+                        if save_diary(app.clone(), date_str, content).is_ok() {
                             imported_count += 1;
                         }
                     }

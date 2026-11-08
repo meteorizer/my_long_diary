@@ -6,8 +6,6 @@ use tauri::{AppHandle, Manager};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
     pub diary_directory: String,
-    pub has_password: bool,
-    pub password_salt: Option<String>, // Store salt if password exists (e.g. Hex encoded)
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -26,8 +24,6 @@ impl Default for AppSettings {
 
         AppSettings {
             diary_directory: "".to_string(), // Empty by default to trigger Setup Wizard
-            has_password: false,
-            password_salt: None,
             theme: "system".to_string(),
         }
     }
@@ -67,46 +63,6 @@ pub fn get_settings(app: AppHandle) -> AppSettings {
     load_settings(&app)
 }
 
-pub fn get_app_salt(app: &AppHandle) -> Option<String> {
-    let settings = load_settings(app);
-    let dir = PathBuf::from(&settings.diary_directory);
-    
-    let salt_path = dir.join(".app_salt");
-    // 1. Try reading the portable salt from the diary directory
-    if salt_path.exists() {
-        if let Ok(salt) = fs::read_to_string(&salt_path) {
-            let trimmed = salt.trim().to_string();
-            if !trimmed.is_empty() {
-                return Some(trimmed);
-            }
-        }
-    }
-    
-    // 2. Migration: Check old tauri-app settings
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "meteo", "tauri-app") {
-        let old_path = proj_dirs.config_dir().join("settings.json");
-        if old_path.exists() {
-            if let Ok(content) = fs::read_to_string(&old_path) {
-                if let Ok(old_settings) = serde_json::from_str::<AppSettings>(&content) {
-                    if let Some(old_salt) = old_settings.password_salt {
-                        // Save it to the portable location for future use
-                        let _ = fs::write(&salt_path, &old_salt);
-                        return Some(old_salt);
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Fallback to current settings
-    if let Some(current_salt) = &settings.password_salt {
-        let _ = fs::write(&salt_path, current_salt);
-        return Some(current_salt.clone());
-    }
-
-    None
-}
-
 #[tauri::command]
 pub fn update_diary_directory(app: AppHandle, new_directory: String) -> Result<(), String> {
     let mut settings = load_settings(&app);
@@ -122,21 +78,6 @@ pub fn update_diary_directory(app: AppHandle, new_directory: String) -> Result<(
 }
 
 #[tauri::command]
-pub fn update_password_settings(app: AppHandle, has_password: bool, salt: Option<String>) -> Result<(), String> {
-    let mut settings = load_settings(&app);
-    settings.has_password = has_password;
-    settings.password_salt = salt.clone();
-    
-    // Save salt securely to the diary directory to prevent it from being lost if config is deleted
-    if let Some(s) = &salt {
-        let salt_path = PathBuf::from(&settings.diary_directory).join(".app_salt");
-        let _ = fs::write(&salt_path, s);
-    }
-    
-    save_settings(&app, &settings)
-}
-
-#[tauri::command]
 pub fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
     let mut settings = load_settings(&app);
     settings.theme = theme;
@@ -147,8 +88,6 @@ pub fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
 pub fn finalize_setup(
     app: AppHandle,
     directory: String,
-    has_password: bool,
-    salt: Option<String>,
 ) -> Result<(), String> {
     let mut settings = load_settings(&app);
     
@@ -158,15 +97,7 @@ pub fn finalize_setup(
         let _ = fs::create_dir_all(&path).map_err(|e| e.to_string())?;
     }
     
-    settings.diary_directory = directory.clone();
-    settings.has_password = has_password;
-    settings.password_salt = salt.clone();
-    
-    // Write salt to .app_salt if valid
-    if let Some(s) = &salt {
-        let salt_path = path.join(".app_salt");
-        let _ = fs::write(&salt_path, s);
-    }
-    
+    settings.diary_directory = directory;
+
     save_settings(&app, &settings)
 }

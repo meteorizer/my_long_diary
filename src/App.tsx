@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Editor } from "./Editor";
-import { LockScreen } from "./LockScreen";
 import { Settings } from "./Settings";
 import { SetupWizard } from "./SetupWizard";
 import { Book, Menu } from "lucide-react";
@@ -13,9 +12,8 @@ function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   
   // Settings Store
-  const { settings, sessionKey, isSettingsOpen, fetchSettings } = useSettingsStore();
+  const { settings, isSettingsOpen, fetchSettings } = useSettingsStore();
 
-  const isLocked = settings.has_password && !sessionKey;
   const needsSetup = !settings.diary_directory || settings.diary_directory.trim() === "";
   
   // Zustand Store
@@ -25,10 +23,10 @@ function App() {
   // Load diaries and settings on startup
   useEffect(() => {
     fetchSettings();
-    if (!needsSetup && !isLocked) {
+    if (!needsSetup) {
       fetchDiaries();
     }
-  }, [fetchSettings, fetchDiaries, isLocked, needsSetup]);
+  }, [fetchSettings, fetchDiaries, needsSetup]);
 
   // Handle Theme application
   useEffect(() => {
@@ -66,7 +64,6 @@ function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-primary)] text-[var(--text-primary)] relative">
       {needsSetup && <SetupWizard />}
-      {!needsSetup && isLocked && <LockScreen />}
       {!needsSetup && isSettingsOpen && <Settings />}
       <Sidebar 
         isOpen={isSidebarOpen} 

@@ -1,5 +1,4 @@
 pub mod commands;
-pub mod crypto;
 pub mod settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,11 +12,9 @@ pub fn run() {
             commands::list_diaries,
             commands::read_diary,
             commands::save_diary,
-            commands::verify_password,
             commands::import_diaries,
             settings::get_settings,
             settings::update_diary_directory,
-            settings::update_password_settings,
             settings::update_theme,
             settings::finalize_setup
         ])

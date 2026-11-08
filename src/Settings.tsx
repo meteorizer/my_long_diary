@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FolderOpen, Lock, X, Save, Monitor } from "lucide-react";
+import { FolderOpen, X, Save, Monitor } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "./store/settingsStore";
 import { useDiaryStore } from "./store/diaryStore";
@@ -7,13 +7,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { SetupWizard } from "./SetupWizard";
 
 export function Settings() {
-  const { settings, fetchSettings, updatePassword, updateTheme, setSettingsOpen } = useSettingsStore();
+  const { settings, fetchSettings, updateTheme, setSettingsOpen } = useSettingsStore();
   
   const [localDir, setLocalDir] = useState(settings.diary_directory);
-  const [isPasswordEnabled, setIsPasswordEnabled] = useState(settings.has_password);
   const [localTheme, setLocalTheme] = useState(settings.theme);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -27,7 +24,6 @@ export function Settings() {
 
   useEffect(() => {
     setLocalDir(settings.diary_directory);
-    setIsPasswordEnabled(settings.has_password);
     setLocalTheme(settings.theme);
   }, [settings]);
 
@@ -40,14 +36,10 @@ export function Settings() {
     // Reload local settings from the store to update UI
     const updatedState = useSettingsStore.getState().settings;
     setLocalDir(updatedState.diary_directory);
-    setIsPasswordEnabled(updatedState.has_password);
     setSuccess("Directory updated successfully.");
   };
 
   const handleSave = async () => {
-    setError(null);
-    setSuccess(null);
-
     setError(null);
     setSuccess(null);
 
@@ -58,40 +50,6 @@ export function Settings() {
         setError("Failed to update theme");
         return;
       }
-    }
-
-    // Save password changes
-    if (isPasswordEnabled && newPassword) {
-      if (newPassword !== confirmPassword) {
-        setError("Passwords do not match");
-        return;
-      }
-
-      // We should ideally generate a salt and hash locally or via rust command.
-      // But we haven't exposed generic `generate_salt` in commands.rs yet...
-      // Wait, we need to generate salt somewhere. Let's just generate a basic random string for salt here, 
-      // or we can add a rust command `generate_salt()`. 
-      // For now, let's generate a simple UUID-based salt in Javascript.
-      const newSalt = crypto.randomUUID().replace(/-/g, '');
-      
-      const pwdSuccess = await updatePassword(true, newSalt);
-      if (!pwdSuccess) {
-        setError("Failed to set password");
-        return;
-      }
-      
-      // Update session key in memory so we don't immediately lock them out
-      useSettingsStore.getState().setSessionKey(newPassword);
-      setNewPassword("");
-      setConfirmPassword("");
-    } else if (!isPasswordEnabled && settings.has_password) {
-      // Removing password
-      const pwdSuccess = await updatePassword(false, null);
-      if (!pwdSuccess) {
-        setError("Failed to remove password");
-        return;
-      }
-      useSettingsStore.getState().setSessionKey(null);
     }
 
     setSuccess("Settings saved successfully");
@@ -112,10 +70,8 @@ export function Settings() {
         setError(null);
         setSuccess(null);
         
-        const password = useSettingsStore.getState().sessionKey;
-        const importedCount = await invoke<number>("import_diaries", { 
+        const importedCount = await invoke<number>("import_diaries", {
           sourceDir: selectedPath,
-          password
         });
         
         setSuccess(`Successfully imported ${importedCount} diaries.`);
@@ -234,56 +190,6 @@ export function Settings() {
                 {isImporting ? "Importing..." : "Import"}
               </button>
             </div>
-          </div>
-
-          {/* Security Settings */}
-          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide flex items-center">
-                <Lock size={16} className="mr-2" /> App Security
-              </h3>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  className="sr-only peer" 
-                  checked={isPasswordEnabled}
-                  onChange={(e) => setIsPasswordEnabled(e.target.checked)}
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-500"></div>
-              </label>
-            </div>
-            
-            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-              If enabled, diaries are encrypted using AES-256-GCM. 
-              <br/><span className="text-orange-500 dark:text-orange-400 font-medium">Warning: If you lose your password, your diaries cannot be recovered.</span>
-            </p>
-
-            {isPasswordEnabled && (
-              <div className="space-y-3 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">New Password</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder={settings.has_password ? "Leave blank to keep existing" : "Enter new password"}
-                    className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-                {newPassword.length > 0 && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm Password</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
-                      className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
