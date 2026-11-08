@@ -6,6 +6,7 @@ import { SetupWizard } from "./SetupWizard";
 import { Book, Menu } from "lucide-react";
 import { useDiaryStore, getTodayStr } from "./store/diaryStore";
 import { useSettingsStore } from "./store/settingsStore";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -27,6 +28,23 @@ function App() {
       fetchDiaries();
     }
   }, [fetchSettings, fetchDiaries, needsSetup]);
+
+  // Record the open diary in history before the window closes.
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onCloseRequested(async () => {
+      try {
+        await useDiaryStore.getState().flush("leave");
+      } catch (e) {
+        console.error("Failed to save before closing:", e);
+      }
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const conflictsImported = useDiaryStore((state) => state.conflictsImported);
+  const dismissConflicts = useDiaryStore((state) => state.dismissConflicts);
 
   // Handle Theme application
   useEffect(() => {
@@ -79,6 +97,17 @@ function App() {
           isSidebarOpen ? "ml-72" : "ml-0"
         }`}
       >
+        {conflictsImported.length > 0 && (
+          <div className="absolute top-4 right-4 z-50 max-w-md px-4 py-3 text-sm rounded-lg shadow-md bg-amber-50 text-amber-900 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-100 dark:border-amber-800 flex items-start">
+            <span>
+              OneDrive 동기화 충돌 사본을 기록으로 옮겼어요: {conflictsImported.join(", ")}.
+              해당 날짜의 "기록"에서 내용을 확인하고 필요하면 복원하세요.
+            </span>
+            <button onClick={dismissConflicts} className="ml-3 opacity-60 hover:opacity-100 font-bold">
+              ×
+            </button>
+          </div>
+        )}
         {!isSidebarOpen && (
           <button
             onClick={() => setIsSidebarOpen(true)}

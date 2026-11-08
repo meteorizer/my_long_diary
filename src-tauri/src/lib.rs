@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod history;
 pub mod settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,6 +14,9 @@ pub fn run() {
             commands::read_diary,
             commands::save_diary,
             commands::import_diaries,
+            commands::list_snapshots,
+            commands::read_snapshot,
+            commands::restore_snapshot,
             settings::get_settings,
             settings::update_diary_directory,
             settings::update_theme,
